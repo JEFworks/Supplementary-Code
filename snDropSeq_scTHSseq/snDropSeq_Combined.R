@@ -1,5 +1,11 @@
-plot(1,1)
-## ###################### read in data
+###################
+## Combined snDrop-seq clustering
+##
+## @author: Jean Fan
+## @email: jeanfan@fas.harvard.edu
+###################
+
+## ###################### read in data from 10X
 ## require(Matrix)
 ## x <- read.table("../data-raw/Occ_06062017_all_counts_PC_no-MT.tsv.gz",header=T,sep="\t",stringsAsFactors=F)
 ## countMatrix <- Matrix(as.matrix(x),sparse=T)
@@ -33,7 +39,7 @@ sample <- factor(c(
 names(sample) <- c(colnames(cd.Occ), colnames(cd.Fcx), colnames(cd.Cer))
 head(sample)
 
-## annotations from individual analysis
+## load annotations from individual analysis
 load("Occ_results_06082017.RData")
 head(Occ.annot)
 load("Fcx_results_06082017.RData")
@@ -62,7 +68,7 @@ countMatrix <- countMatrix[, vc]
 countMatrix.batch <- countMatrix.batch[vc]
 dim(countMatrix)
 
-########### PAGODA
+########### PAGODA2
 library("largeVis", lib.loc="/usr/local/lib/R/site-library")
 library(pagoda2)
 

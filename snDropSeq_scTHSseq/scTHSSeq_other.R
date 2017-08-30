@@ -1,16 +1,21 @@
 ####################
-# Chromoclust analysis on all epigenetic data
-#
-# @date 4/7/2017
-####################
+## Chromoclust analysis on all epigenetic data
+## for non-Occ datasets projected onto axis established by Occ data
+##
+## @date 4/7/2017
+## @author: Jean Fan
+## @email: jeanfan@fas.harvard.edu
+###################
+
+## load Occ results
 load("hR10_vc_comb_fixed_withopcend.RData")
 hR10_vc_r <- r
 hR10_vc_annot <- annot
 
+## load non-Occ data for projection
 load("hR7_fc9_cov_peaks_spp_RMMMcombined_RMrepeatmask100_bandwidth500_step100_thr5_span10_fdr1e-07.RData")
 #load("hR11_cer_cov_peaks_spp_RMMMcombined_RMrepeatmask100_bandwidth500_step100_thr5_span10_fdr1e-07.RData")
 #load("hR11_hip_cov_peaks_spp_RMMMcombined_RMrepeatmask100_bandwidth500_step100_thr5_span10_fdr1e-07.RData")
-#load("hR7_hip_cov_peaks_spp_RMMMcombined_RMrepeatmask100_bandwidth500_step100_thr5_span10_fdr1e-07.RData")
 library(Matrix)
 ## convert by slice
 cov <- do.call(cbind,apply(embed(pmin(ncol(cov),seq(0,ceiling(ncol(cov)/1e3))*1e3),2),1,function(ii) {
@@ -34,14 +39,6 @@ dim(cov)
 ## binarize
 cov[cov>0] <- 1
 
-## clean up name
-#cn <- colnames(cov)
-#cn <- gsub('.unique.', '|', cn)
-#cn <- gsub('.rm_mm.bam', '', cn)
-#cn <- gsub('_noAlt', '', cn)
-#cn <- paste0('hR6_AdFC9_', cn)
-#head(cn)
-#colnames(cov) <- cn
 
 ############################# chromoclust
 library("Rcpp", lib.loc="/usr/local/lib/R/site-library")

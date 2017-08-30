@@ -1,3 +1,9 @@
+###################
+## Integrating snDrop-seq and scTHS-seq data
+## @author: Jean Fan
+## @email: jeanfan@fas.harvard.edu
+###################
+
 require(dendextend)
 library("Rcpp", lib.loc="/usr/local/lib/R/site-library")
 library(WGCNA)

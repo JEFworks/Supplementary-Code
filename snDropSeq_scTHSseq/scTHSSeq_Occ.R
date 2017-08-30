@@ -1,11 +1,14 @@
 ####################
-# Chromoclust analysis on all epigenetic data
-# See spp_comb.R for previous work to get coverage matrix
-#
-# visual cortex only
-#
-# @date 2/28/2017
-####################
+## Chromoclust analysis on all epigenetic data
+## See spp_comb.R for previous work to get coverage matrix
+##
+## visual cortex only
+##
+## @author: Jean Fan
+## @email: jeanfan@fas.harvard.edu
+## @date 2/28/2017
+###################
+
 
 ## load data
 #load("hR10_vc_cov_peaks_spp_RMMM_RMrepeatmask100_bandwidth500_step100_thr5_span10_fdr1e-07.RData")

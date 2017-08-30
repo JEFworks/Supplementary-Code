@@ -1,3 +1,9 @@
+###################
+## snDrop-seq Clustering of Fcx	data
+## @author: Jean Fan
+## @email: jeanfan@fas.harvard.edu
+###################
+
 ## load data
 load("../data/Fcx_06062017_all_counts_PC_no-MT.RData")
 dim(countMatrix)
