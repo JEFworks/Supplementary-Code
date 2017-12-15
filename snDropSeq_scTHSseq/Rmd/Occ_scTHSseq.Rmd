@@ -1,0 +1,289 @@
+---
+title: "snTHSSeq clustering analysis of Occ data"
+author: "Jean Fan and Masahiro Kanai"
+date: "12/15/2017"
+output: html_document
+---
+
+```{r}
+library(org.Hs.eg.db)
+library(pcaMethods)
+library(igraph)
+library(irlba)
+require(mgcv)
+library("Rcpp", lib.loc="/usr/local/lib/R/site-library")
+library(WGCNA)
+library("dbscan", lib.loc="/usr/local/lib/R/site-library")
+library("largeVis", lib.loc="/usr/local/lib/R/site-library")
+library(Cairo)
+library(parallel)
+require(Matrix)
+```
+
+## Goal
+```{r, echo=FALSE, cache=TRUE}
+rold <- readRDS("/home/pkharchenko/kun/ths/combined/vc.p2.rds")
+cell.groups.peter <- as.factor(rold$clusters$PCA$walktrap);
+
+load('/home/jfan/Projects/Kun_Epigenetics/R5/hR10_vc_comb_fixed_withopcend.RData')
+Occ.old <- r
+Occ.annot.old <- annot
+```
+
+```{r}
+Occ.old$plotEmbedding(type = 'PCA',
+                      groups=Occ.annot.old,
+                      embeddingType = 'tSNE',
+                      mark.clusters = FALSE,
+                      show.legend=TRUE,
+                      legend.x = 'bottomleft')
+```
+
+## 0. PAGODA2 extention
+```{r}
+library("pagoda2", lib.loc="/home/barkasn/R/x86_64-pc-linux-gnu-library/3.4/")
+source('myPagoda2.R') ## inherited from Pagoda2; extended R5 class implementing carefullyNormalizedReduction
+# source("schromoclust.r") ## slightly different PAGODA2 version; should find cleaner way of building on PAGODA2
+source("schromoclust-rev.r") ## schromoclust.r without Pagoda2 definition
+```
+
+## 1. Load data and QC
+```{r}
+load("../data/hR10_vc_cov_peaks_spp_RMMMcombined_RMrepeatmask100_bandwidth500_step100_thr5_span10_fdr1e-07.RData")
+bams <- colnames(cov)
+dim(cov)
+
+library(Matrix)
+## convert by slice
+cov <- do.call(cbind,apply(embed(pmin(ncol(cov),seq(0,ceiling(ncol(cov)/1e3))*1e3),2),1,function(ii) {
+                         foo <- cov[,seq(ii[2]+1,ii[1])]
+                         ## binarize
+                         foo[foo>0] <- 1
+                         Matrix(foo,sparse=T)
+                     }))
+dim(cov)
+
+## filter for common peaks only
+quantile(rowSums(cov>0))
+vi <- rowSums(cov>0)>30; table(vi)
+cov <- cov[vi,]
+dim(cov)
+
+## seems like there are some bad cells causing issues
+quantile(Matrix::colSums(cov>0))
+vi <- Matrix::colSums(cov>0)>100; table(vi)
+cov <- cov[, vi]
+
+## clean up name
+cn <- colnames(cov)
+cn <- gsub('../data-raw5/hR10_vc_noAlt/ubam_rm_mm/', '', cn)
+cn <- gsub('.unique.', '|', cn)
+cn <- gsub('.rm_mm.bam', '', cn)
+cn <- gsub('.hR10_vc_noAlt', '', cn)
+cn <- paste0('hR10_vc_', cn)
+
+head(cn)
+colnames(cov) <- cn
+names(bams) <- cn
+batch <- as.factor(gsub(".*\\|(.*)","\\1",colnames(cov))); names(batch) <- colnames(cov)
+```
+
+## 2. PAGODA2
+```{r}
+r <- myPagoda2$new(cov,trim=0,n.cores=20,batch=batch)
+x <- r$carefullyNormalizedReduction(sparse=T)
+r$calculatePcaReduction(nPcs=30,type='normalized', n.odgenes=NULL)
+r$makeKnnGraph(k=10,type='PCA',center=T,distance='cosine');
+r$getKnnClusters(method=multilevel.community,type='PCA',name='multilevel')
+r$getKnnClusters(method=walktrap.community,type='PCA',name='walktrap')
+r$getEmbedding(type='PCA',M=5,perplexity=50,gamma=0.8)
+r$getEmbedding(type='PCA',perplexity=50,verbose=T,embeddingType='tSNE')
+```
+
+## 3. Plot
+
+```{r}
+par(mfrow=c(2,2));
+r$plotEmbedding(type='PCA',show.legend=F,clusterType='multilevel',mark.clusters=T,mark.cluster.cex=1,alpha=0.1, main="multilevel")
+r$plotEmbedding(type='PCA',show.legend=F,clusterType='walktrap',mark.clusters=T,mark.cluster.cex=1,alpha=0.1, main="walktrap")
+r$plotEmbedding(type='PCA',show.legend=F,mark.clusters=T,mark.cluster.cex=1,groups=cell.groups.peter,alpha=0.1,main="Peter's clusters")
+r$plotEmbedding(type='PCA',show.legend=F,mark.clusters=T,mark.cluster.cex=1,colors=r$depth,alpha=0.1,main="depth")
+r$plotEmbedding(type='PCA',show.legend=F,mark.clusters=T,mark.cluster.cex=1,groups=r$batch,alpha=0.1,main="batch")
+
+par(mfrow=c(2,2));
+r$plotEmbedding(type='PCA',show.legend=F,clusterType='multilevel',mark.clusters=T,mark.cluster.cex=1,alpha=0.1,embeddingType='tSNE', main="multilevel")
+r$plotEmbedding(type='PCA',show.legend=F,clusterType='walktrap',mark.clusters=T,mark.cluster.cex=1,alpha=0.1,embeddingType='tSNE', main="walktrap")
+r$plotEmbedding(type='PCA',show.legend=F,mark.clusters=T,mark.cluster.cex=1,groups=cell.groups.peter,alpha=0.1,embeddingType='tSNE',main="Peter's clusters")
+r$plotEmbedding(type='PCA',show.legend=F,mark.clusters=T,mark.cluster.cex=1,colors=r$depth,alpha=0.1,main="depth",embeddingType='tSNE')
+r$plotEmbedding(type='PCA',show.legend=F,mark.clusters=T,mark.cluster.cex=1,groups=r$batch,alpha=0.1,main="batch",embeddingType='tSNE')
+```
+
+## 4. Consolidate groupings
+```{r}
+## consolidate groupings
+cl0 <- r$clusters$PCA$multilevel[rownames(r$counts)]
+cl1 <- r$clusters$PCA$walktrap[rownames(r$counts)]
+
+# cl0[cl0==9] <- NA
+# cl0[cl0==10] <- NA
+# cl0[cl0==8] <- NA
+# cl0[cl0==4] <- NA
+# cl0[cl1==2] <- NA
+# cl0[cl0==1 & cl1==3] <- NA
+
+cl0[cl0==5] = NA
+
+cl0 <- factor(cl0)
+
+r$plotEmbedding(type='PCA',groups=cl0, mark.clusters=TRUE, alpha=0.1)
+r$plotEmbedding(type='PCA',groups=cl0, mark.clusters=TRUE, alpha=0.1,embeddingType='tSNE')
+
+
+lvec <- pagoda2:::colSumByFac(r$misc[['rawCounts']],as.integer(cl0))[-1,] + 1
+#lvec <- t(lvec)
+lvec <- t(lvec/pmax(1,rowSums(lvec)))
+#lvec <- lvec/rowSums(lvec>0)
+colnames(lvec) <- paste0('cl',which(table(cl0)>0))
+rownames(lvec) <- colnames(r$misc[['rawCounts']])
+str(lvec)
+ld <- pagoda2:::jsDist(lvec); colnames(ld) <- rownames(ld) <- colnames(lvec)
+hctree <- stats::hclust(as.dist(ld),method='ward.D2')
+plot(hctree,axes=F,sub="",ylab="",cex=0.8,main='initial cluster dendrogram')
+```
+
+## 5. GSEA
+
+```{r}
+########################################################## GSEA
+# map sites to genes
+p2g <- hg38.peaks2Symbols(colnames(r$counts))
+# run GO enrichment of the differential sites
+gene2go <- hg38.getSymbols2Go(p2g)
+
+library(GO.db)
+# custom gene sets
+d <- read.table("/home/pkharchenko/m/kun/ths/vc/cortical.quake.txt",sep="\t",header=T,stringsAsFactors=F)
+cus2gene <- tapply(d$gene,as.factor(d$cluster),I); names(cus2gene) <- paste('quake',names(cus2gene),sep='.')
+d <- read.table("/home/pkharchenko/m/kun/ths/vc/cortical.all50.txt",sep="\t",header=T,stringsAsFactors = F)
+d$cluster <- paste('top50',d$cluster,sep='.')
+cus2gene <- c(cus2gene,tapply(d$gene,as.factor(d$cluster),I))
+d <- read.table("/home/pkharchenko/m/kun/ths/vc/cortical.deg.txt",sep="\t",header=F,stringsAsFactors = F); colnames(d)<-c('cluster','accession',"gene")
+d$cluster <- paste('deg',d$cluster,sep='.')
+cus2gene <- c(cus2gene,tapply(d$gene,as.factor(d$cluster),I))
+gene2cus <- list2env(invert.string.list(cus2gene))
+
+calculate.go.enrichment <- function(genelist,universe,pvalue.cutoff=1e-3,mingenes=3,env=entrez2GO,subset=NULL,list.genes=F) {
+      all.genes <- unique(ls(env));
+        # determine sizes
+        universe <- unique(c(universe,genelist));
+        ns <- length(intersect(genelist,all.genes));
+        us <- length(intersect(universe,all.genes));
+        #pv <- lapply(go.map,function(gl) { nwb <- length(intersect(universe,gl[[1]])); if(nwb<mingenes) { return(0.5)} else { p <- phyper(length(intersect(genelist,gl[[1]])),nwb,us-nwb,ns); return(ifelse(p>0.5,1.0-p,p)) }});
+
+        # compile count vectors
+        stab <- table(unlist(mget(as.character(genelist),env,ifnotfound=NA),recursive=T))
+        utab <- table(unlist(mget(as.character(universe),env,ifnotfound=NA),recursive=T))
+        if(!is.null(subset)) {
+                stab <- stab[names(stab) %in% subset];
+                    utab <- utab[names(utab) %in% subset];
+                  }
+
+        tabmap <- match(rownames(stab),rownames(utab))
+
+        cv <- data.frame(cbind(utab,rep(0,length(utab)))); names(cv) <- c("u","s");
+        cv$s[match(rownames(stab),rownames(utab))] <- as.vector(stab);
+        cv <- na.omit(cv);
+        cv <- cv[cv$u>mingenes,];
+        pv <- phyper(cv$s,cv$u,us-cv$u,ns,lower.tail=F);
+        pr <- dhyper(cv$s,cv$u,us-cv$u,ns)
+        # correct for multiple hypothesis
+        mg <- length(which(cv$u>mingenes));
+
+        if(pvalue.cutoff<1) {
+                ovi <- which(pv<0.5 & p.adjust(pr)<=pvalue.cutoff);
+                    uvi <- which(pv>0.5 & p.adjust(pr)<=pvalue.cutoff);
+                  } else {
+                          ovi <- which(pv<0.5 & pr*mg<=pvalue.cutoff);
+                              uvi <- which(pv>0.5 & pr*mg<=pvalue.cutoff);
+                            }
+        ovi <- ovi[order(pr[ovi])];
+        uvi <- uvi[order(pr[uvi])];
+
+        #return(list(over=data.frame(t=rownames(cv)[ovi],o=cv$s[ovi],u=cv$u[ovi],p=pr[ovi]*mg),under=data.frame(t=rownames(cv)[uvi],o=cv$s[uvi],u=cv$u[uvi],p=pr[uvi]*mg)))
+        if(list.genes) {
+                x <- mget(as.character(genelist),env,ifnotfound=NA);
+                    df <- data.frame(id=rep(names(x),unlist(lapply(x,function(d) length(na.omit(d))))),go=na.omit(unlist(x)),stringsAsFactors=F)
+                    ggl <- tapply(df$id,as.factor(df$go),I)
+                    ovg <- as.character(unlist(lapply(ggl[rownames(cv)[ovi]],paste,collapse=" ")))
+                    uvg <- as.character(unlist(lapply(ggl[rownames(cv)[uvi]],paste,collapse=" ")))
+                    return(list(over=data.frame(t=rownames(cv)[ovi],o=cv$s[ovi],u=cv$u[ovi],p=pr[ovi]*mg,fe=cv$s[ovi]/(ns*cv$u[ovi]/us),genes=ovg),under=data.frame(t=rownames(cv)[uvi],o=cv$s[uvi],u=cv$u[uvi],p=pr[uvi]*mg,fe=cv$s[uvi]/(ns*cv$u[uvi]/us),genes=uvg)))
+                  } else {
+                          return(list(over=data.frame(t=rownames(cv)[ovi],o=cv$s[ovi],u=cv$u[ovi],p.raw=pr[ovi],fdr=p.adjust(pr)[ovi],p=pr[ovi]*mg,fe=cv$s[ovi]/(ns*cv$u[ovi]/us),fer=cv$s[ovi]/(length(genelist)*cv$u[ovi]/length(universe))),under=data.frame(t=rownames(cv)[uvi],o=cv$s[uvi],u=cv$u[uvi],p.raw=pr[uvi],fdr=p.adjust(pr)[uvi],p=pr[uvi]*mg,fe=cv$s[uvi]/(ns*cv$u[uvi]/us))))
+                            }
+      }
+
+## test differential sites for enrichment
+lapply(dg,function(s) {
+    s <- names(s)
+    calculate.go.enrichment(na.omit(unique(p2g[s])),na.omit(unique(p2g)),pvalue.cutoff=0.2,list.genes=F,env=gene2cus)$over;
+})
+
+## lapply(dgall,function(s) {
+##     s <- names(s[[1]])
+##     r1 <- calculate.go.enrichment(na.omit(unique(p2g[s])),na.omit(unique(p2g)),pvalue.cutoff=0.2,list.genes=F,env=gene2cus)$over;
+##     s <- names(s[[2]])
+##     r2 <- calculate.go.enrichment(na.omit(unique(p2g[s])),na.omit(unique(p2g)),pvalue.cutoff=0.2,list.genes=F,env=gene2cus)$over;
+##     list(r1,r2)
+## })
+
+## calculate GO enrichment
+lapply(1:length(dg), function(i) {
+    s <- names(dg[[i]])
+    x <- calculate.go.enrichment(na.omit(unique(p2g[s])),na.omit(unique(p2g)),pvalue.cutoff=0.05,list.genes=F,env=gene2go)$over;
+    x$desc <- select(GO.db, keys = as.character(x$t), columns = c("TERM"), multiVals = "CharacterList")
+    x[x$u<2e3,]
+})
+```
+
+## 6. Final plot
+```{r}
+group <- as.character(cl0)
+# group[cl0==1] <- 'Mic'
+# group[cl0==2] <- 'Ex2'
+# group[cl0==3] <- 'Ast'
+# group[cl0==5] <- 'Oli'
+# group[cl0==6] <- 'Ex1'
+# group[cl0==7] <- 'In'
+
+group[cl0 %in% c(1,7)] = 'Ex2'
+group[cl0 %in% c(2,6)] = 'Mic'
+group[cl0 %in% c(3,8)] = 'In'
+group[cl0 %in% c(4,9)] = 'Ast'
+group[cl0 %in% c(10,11)] = 'Oli'
+group[cl0 == 12] = 'Ex1'
+
+group <- factor(group)
+names(group) <- names(cl0)
+head(group)
+
+par(mfrow=c(2,2));
+r$plotEmbedding(type='PCA',groups=group, mark.clusters=TRUE, alpha=0.1)
+r$plotEmbedding(type='PCA',groups=group, mark.clusters=TRUE, alpha=0.1,embeddingType='tSNE')
+
+save(r, group, file='hR10_vc_comb_fixed.RData')
+
+## compare with old
+group.new <- group
+load('/home/jfan/Projects/Kun_Epigenetics/R5/hR10_vc_comb.RData')
+par(mfrow=c(2,2), mar=rep(5,4))
+r$plotEmbedding(type='PCA',groups=group, mark.clusters=TRUE, alpha=0.1)
+r$plotEmbedding(type='PCA',groups=group, mark.clusters=TRUE, alpha=0.1,embeddingType='tSNE')
+r$plotEmbedding(type='PCA',groups=group.new, mark.clusters=TRUE, alpha=0.1)
+r$plotEmbedding(type='PCA',groups=group.new, mark.clusters=TRUE, alpha=0.1,embeddingType='tSNE')
+```
+
+## sessionInfo
+```{r}
+sessionInfo()
+```
+
