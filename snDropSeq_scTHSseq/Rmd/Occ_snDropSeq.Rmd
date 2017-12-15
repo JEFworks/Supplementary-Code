@@ -1,0 +1,228 @@
+---
+title: "snDropSeq clustering analysis of Occ data"
+author: "Jean Fan and Masahiro Kanai"
+date: "12/15/2017"
+output: html_document
+---
+
+```{r, include=FALSE}
+knitr::opts_chunk$set(fig.width=6, fig.height=6)
+```
+
+
+```{r, message=FALSE}
+library(org.Hs.eg.db)
+library(pcaMethods)
+library(igraph)
+library(irlba)
+require(mgcv)
+library("Rcpp", lib.loc="/usr/local/lib/R/site-library")
+library(WGCNA)
+library("dbscan", lib.loc="/usr/local/lib/R/site-library")
+library("largeVis", lib.loc="/usr/local/lib/R/site-library")
+library(Cairo)
+library(parallel)
+library("pagoda2", lib.loc="/home/barkasn/R/x86_64-pc-linux-gnu-library/3.4/")
+require(Matrix)
+```
+
+## Goal: recreate this figure.
+
+```{r, echo=FALSE, cache=TRUE}
+load("/home/jfan/Projects/Kun_snDropSeq/Rcomb/Occ_results_06082017.RData")
+Occ.old <- Occ
+Occ.annot.old <- Occ.annot
+```
+
+```{r, message=FALSE}
+Occ.old$plotEmbedding(type = 'PCA',
+                      groups=Occ.annot.old,
+                      embeddingType = 'tSNE',
+                      mark.clusters = FALSE,
+                      show.legend=TRUE,
+                      legend.x = 'bottomleft')
+```
+
+## 1. Load data and QC
+```{r, cache=TRUE}
+## load data
+load("../data/Occ_06062017_all_counts_PC_no-MT.RData")
+dim(countMatrix)
+
+## Batch annotations
+countMatrix.batch <- as.factor(gsub("_.*","",colnames(countMatrix)))
+names(countMatrix.batch) <- colnames(countMatrix)
+
+## QC
+t0 <- 5000
+t1 <- 300
+vc <- colSums(countMatrix>0)>t1 & colSums(countMatrix)<t0
+table(vc)
+countMatrix <- countMatrix[, vc]
+countMatrix.batch <- countMatrix.batch[vc]
+```
+
+## 2. PAGODA2
+```{r, cache=TRUE}
+## PAGODA2
+## Generate a new pagoda2 object
+dim(countMatrix)
+p2 <- Pagoda2$new(x = countMatrix, n.cores = 4, trim=10, batch=countMatrix.batch)
+
+## Adjust the variance
+p2$adjustVariance(plot = T, gam.k = 10)
+
+## Calculate a PCA reduction with the number of PCs specified by nPCs
+## and using only the n.odgenes overdispersed genes -- in this case 2000
+p2$calculatePcaReduction(nPcs = 150, n.odgenes = 2.e3, maxit=1000)
+
+## Generate K-nearest neighbour graph
+p2$makeKnnGraph(k = 15, type = 'PCA', center = T, weight.type = 'none', n.cores = 4, distance = 'cosine')
+
+## Generate an embedding with tSNE on the basis of the PCA reduction
+p2$getEmbedding(type = 'PCA', embeddingType = 'tSNE', verbose=TRUE, perplexity=30)
+##p2$getEmbedding(type='PCA',M=5,perplexity=500,gamma=1)
+
+## Identify clusters using the infomap.community method
+## on the basis of the reduction called 'PCA' (generated above)
+## Save the resulting clustering as 'infomap'
+p2$getKnnClusters(method = infomap.community, type = 'PCA', name = 'infomap')
+
+## Do an independent identification of clusters using the
+## multilevel community algorithm again using the PCA reduction
+## and save it as 'multilevel'. This does not overwrite the
+## previous clustering
+p2$getKnnClusters(method = multilevel.community, type = 'PCA', name='multilevel')
+
+## Do yet another clustering
+p2$getKnnClusters(method = walktrap.community, type = 'PCA', name='walktrap')
+```
+
+## 3. Plot
+```{r, message=FALSE}
+par(mfrow=c(2,2))
+p2$plotEmbedding(type = 'PCA',
+                 groups=Occ.annot.old,
+                 embeddingType = 'tSNE',
+                 mark.clusters = T,
+                 main="Annot",
+                 mark.cluster.cex = 1,
+                 alpha=0.1)
+
+p2$plotEmbedding(type = 'PCA',
+                 clusterType = 'infomap',
+                 embeddingType = 'tSNE',
+                 mark.clusters = T,
+                 main="infomap",
+                 min.group.size=50,
+                 mark.cluster.cex = 1,
+                 alpha=0.1)
+
+p2$plotEmbedding(type = 'PCA',
+                 clusterType = 'multilevel',
+                 embeddingType = 'tSNE',
+                 mark.clusters = T,
+                 main="multilevel",
+                 min.group.size=50,
+                 mark.cluster.cex = 1,
+                 alpha=0.1)
+
+p2$plotEmbedding(type = 'PCA',
+                 clusterType = 'walktrap',
+                 embeddingType = 'tSNE',
+                 mark.clusters = T,
+                 main="walktrap",
+                 min.group.size=50,
+                 mark.cluster.cex = 1,
+                 alpha=0.1)
+
+cl0 <- p2$clusters$PCA$infomap
+cl0[cl0 %in% which(table(cl0)<50)] <- NA
+retest <- cl0
+## Final plot
+par(mfrow=c(2,2))
+p2$plotEmbedding(type = 'PCA',
+                 groups=countMatrix.batch,
+                 embeddingType = 'tSNE',
+                 mark.clusters = T,
+                 main="Batch",
+                 mark.cluster.cex = 1,
+                 alpha=0.1)
+p2$plotEmbedding(type = 'PCA',
+                 groups=Occ.annot.old,
+                 embeddingType = 'tSNE',
+                 mark.clusters = T,
+                 main="Annot",
+                 mark.cluster.cex = 1,
+                 alpha=0.1)
+p2$plotEmbedding(type = 'PCA',
+                 groups=retest,
+                 embeddingType = 'tSNE',
+                 mark.clusters = T,
+                 main="multilevel",
+                 mark.cluster.cex = 1,
+                 alpha=0.1)
+p2$plotEmbedding(type = 'PCA',
+                 colors=p2$depth,
+                 embeddingType = 'tSNE',
+                 mark.clusters = T,
+                 main="Depth",
+                 mark.cluster.cex = 1)
+```
+
+## 4. Retest
+Note there are some cells with really shallow depth / poor quality if we just remove cells by depth, we will also remove some smaller cell types so we want to remove just the poor quality large neurons and retest
+
+```{r, cache=TRUE}
+good.cells <- na.omit(retest)
+length(good.cells)
+dim(countMatrix)
+
+Occ <- Pagoda2$new(x = countMatrix[, names(good.cells)], n.cores = 4, trim=10, batch=countMatrix.batch[names(good.cells)])
+Occ$adjustVariance(plot = T, gam.k = 10)
+Occ$calculatePcaReduction(nPcs = 150, n.odgenes = 2.e3, maxit=1000)
+Occ$makeKnnGraph(k = 15, type = 'PCA', center = T, weight.type = 'none', n.cores = 4, distance = 'cosine')
+Occ$getEmbedding(type = 'PCA', embeddingType = 'tSNE', verbose=TRUE, perplexity=30)
+Occ$getKnnClusters(method = infomap.community, type = 'PCA', name = 'infomap')
+
+newannot <- Occ$clusters$PCA$infomap
+newannot[newannot %in% which(table(newannot)<30)] <- NA
+```
+
+```{r, message=FALSE}
+## Final plot
+par(mfrow=c(2,2))
+Occ$plotEmbedding(type = 'PCA',
+                  groups=countMatrix.batch,
+                  embeddingType = 'tSNE',
+                  mark.clusters = T,
+                  main="Batch",
+                  mark.cluster.cex = 1,
+                  alpha=0.1)
+Occ$plotEmbedding(type = 'PCA',
+                  groups=Occ.annot.old,
+                  embeddingType = 'tSNE',
+                  mark.clusters = T,
+                  main="Annot",
+                  mark.cluster.cex = 1,
+                  alpha=0.1)
+Occ$plotEmbedding(type = 'PCA',
+                  groups=newannot,
+                  embeddingType = 'tSNE',
+                  mark.clusters = T,
+                  main="multilevel",
+                  mark.cluster.cex = 1,
+                  alpha=0.1)
+Occ$plotEmbedding(type = 'PCA',
+                  colors=Occ$depth,
+                  embeddingType = 'tSNE',
+                  mark.clusters = T,
+                  main="Depth",
+                  mark.cluster.cex = 1,
+                  alpha=0.1)
+```
+
+## sessionInfo
+```{r}
+sessionInfo()
+```
