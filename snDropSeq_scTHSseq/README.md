@@ -1,6 +1,6 @@
 # Integrative single-cell analysis of transcriptional and epigenetic states in the human adult brain
 
-Blue B Lake*, Song Chen*, Brandon C Sos*, Jean Fan*, Gwendolyn E Kaeser, Yun C Yung, Thu E Duong, Derek Gao, Jerold Chun, Peter V Kharchenko, Kun Zhang
+Blue B Lake\*, Song Chen\*, Brandon C Sos\*, Jean Fan\*, Gwendolyn E Kaeser, Yun C Yung, Thu E Duong, Derek Gao, Jerold Chun, Peter V Kharchenko, Kun Zhang
 
 ![fig](https://raw.githubusercontent.com/JEFworks/figure-code-dump/master/snDropSeq_scTHSseq/img/nbt4038.png)
 
@@ -26,3 +26,7 @@ See comments within scripts for more details
 # Rmd/
 
 Cleaned up Rmarkdown files recreating main analyses and figures can be found in the Rmd/ folder, courtesy of [Masahiro Kanai](https://github.com/mkanai)
+
+# demultiplexing/
+
+Information and scripts from Brandon Sos on how to demultiplex the scTHS-seq data.
